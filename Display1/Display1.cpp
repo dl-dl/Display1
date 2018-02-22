@@ -160,6 +160,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		return 1;
 
 	HANDLE hComm = CreateThread(NULL, 0, ftRecv, 0, 0, NULL);
+	if(NULL == hComm)
+		return 2;
 
 	MainLoop(&appGlobals);
 

@@ -201,6 +201,7 @@ static const char* deviceFlag2ToString(DWORD flags)
 
 int listFtUsbDevices(_Out_ char* s)
 {
+	*s = 0;
 	DWORD numOfDevices = 0;
 	FT_STATUS ftStatus = FT_CreateDeviceInfoList(&numOfDevices);
 
