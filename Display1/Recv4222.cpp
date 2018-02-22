@@ -9,7 +9,7 @@
 
 extern void __cdecl _translateSEH(unsigned int, EXCEPTION_POINTERS*);
 
-int slaveDevIdx = 1;
+int slaveDevIdx = 0;
 bool terminateComm = false;
 
 static void showMessage(_In_z_ const char* text)
@@ -17,27 +17,29 @@ static void showMessage(_In_z_ const char* text)
 	MessageBoxA(NULL, text, "FT4222 Interface", MB_OK);
 }
 
-static int processSpiHeader(uint8 code)
+static int processSpiHeader(uint8_t code)
 {
-	if (0x01 == (code & 0x1D)) // 3-bit data update
-		return 1;
+	if (0x80 == (code & 0xBB)) // 3-bit data update
+		return 3;
+	else if (0x90 == (code & 0xB3)) // 4-bit data update
+		return 4;
 	return 0;
 }
-
-static uint8 bitReverse(uint8 b)
+/*
+static uint8 bitReverse(uint8_t b)
 {
 	b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
 	b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
 	b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
 	return b;
 }
-
-static inline uint8 processSpiAddr(uint8 code)
+*/
+static inline uint8_t processSpiAddr(uint8_t code)
 {
-	return bitReverse(code);
+	return code;
 }
 
-static void processSpiMsg3(_In_ const uint8* data, uint8 addr)
+static void processSpiMsg3(_In_ const uint8_t* data, uint8_t addr)
 {
 	PointDataMsg* p = new PointDataMsg;
 	p->addr = addr;
@@ -46,17 +48,38 @@ static void processSpiMsg3(_In_ const uint8* data, uint8 addr)
 	{
 		size_t n = (i * 3) / 8;
 		size_t m = (i * 3) % 8;
-		unsigned int v = *(unsigned int*)(data + n);
-		v <<= m;
-		p->data[i * 3] = (v & 1) * 128;
-		p->data[i * 3 + 1] = (v & 2) * 64;
-		p->data[i * 3 + 2] = (v & 4) * 32;
+		uint8_t v = data[n];
+		v >>= m;
+		uint16_t vh = (i < SCREEN_DX - 1) ? data[n + 1] : 0;
+		vh <<= (8 - m);
+		v |= (uint8_t)vh;
+		p->data[i * 3] = ((v >> 2) & 1) * 255;
+		p->data[i * 3 + 1] = ((v >> 1) & 1) * 255;
+		p->data[i * 3 + 2] = (v & 1) * 255;
 	}
 
-	gPostMsg(WM_USER_MSG_POINT_DATA, 0, p);
+	gPostMsg(WM_USER_MSG_LINE_DATA, 0, p);
 }
 
-static DWORD WINAPI ftRecv(LPVOID)
+static void processSpiMsg4(_In_ const uint8_t* data, uint8_t addr)
+{
+	PointDataMsg* p = new PointDataMsg;
+	p->addr = addr;
+	ASSERT_DBG(SCREEN_DX * 3 <= sizeof(p->data));
+	for (size_t i = 0; i < SCREEN_DX; ++i)
+	{
+		size_t n = (i * 4) / 8;
+		size_t m = (i * 4) % 8;
+		const uint8_t v = data[n] >> m;
+		p->data[i * 3] = ((v >> 2) & 1) * 255;
+		p->data[i * 3 + 1] = ((v >> 1) & 1) * 255;
+		p->data[i * 3 + 2] = (v & 1) * 255;
+	}
+
+	gPostMsg(WM_USER_MSG_LINE_DATA, 0, p);
+}
+
+DWORD WINAPI ftRecv(LPVOID)
 {
 	_set_se_translator(_translateSEH);
 	try
@@ -97,49 +120,60 @@ static DWORD WINAPI ftRecv(LPVOID)
 			// if ( FT4222_SetEventNotification(FtHandle, FT4222_EVENT_RXCHAR, hEvent) != FT_OK ) // does not work
 			throw "FT_SetEventNotification failed";
 
-		const uint16 headerSz = 2;
+		const uint16_t headerSz = 2;
 		const uint16_t tailSz = 2;
-		const uint16 dataSz = SCREEN_DX * 3 / 8 + tailSz;
+		const uint16_t dataSz3 = SCREEN_DX * 3 / 8 + tailSz;
+		const uint16_t dataSz4 = SCREEN_DX * 4 / 8 + tailSz;
 		ASSERT_DBG(0 == (SCREEN_DX * 3) % 8);
-		uint8 rxHeader[headerSz];
-		uint8 rxBuffer[1024];
+		uint8_t rxHeader[headerSz];
+		uint8_t rxBuffer[1024];
 		while (!terminateComm)
 		{
 			WaitForSingleObject(hEvent, 1000);
 
-			uint16 rxSize = 0;
+			uint16_t rxSize = 0;
 			if (FT4222_SPISlave_GetRxStatus(ftHandle, &rxSize) != FT_OK)
 				throw "FT4222_SPISlave_GetRxStatus failed";
 
-			while (rxSize >= headerSz + dataSz)
+			while (rxSize >= headerSz + dataSz3)
 			{
-				if (rxSize >= headerSz)
+				int mode = 0;
+				uint16_t sizeTransferred = 0;
+				if (FT4222_SPISlave_Read(ftHandle, rxHeader, headerSz, &sizeTransferred) != FT_OK)
+					throw "FT4222_SPISlave_Read failed";
+				if (headerSz != sizeTransferred)
+					throw "Header Read Failed";
+				rxSize -= sizeTransferred;
+				mode = processSpiHeader(rxHeader[0]);
+
+				if ((3 == mode) && (rxSize >= dataSz3))
 				{
-					uint16 sizeTransferred = 0;
-					if (FT4222_SPISlave_Read(ftHandle, rxHeader, headerSz, &sizeTransferred) != FT_OK)
+					if (FT4222_SPISlave_Read(ftHandle, rxBuffer, dataSz3, &sizeTransferred) != FT_OK)
 						throw "FT4222_SPISlave_Read failed";
-					if (headerSz != sizeTransferred)
-						throw "Header Read Failed";
-					rxSize -= sizeTransferred;
-				}
-				if (1 == processSpiHeader(rxHeader[0]) && (rxSize >= dataSz))
-				{
-					uint16 sizeTransferred = 0;
-					if (FT4222_SPISlave_Read(ftHandle, rxBuffer, dataSz, &sizeTransferred) != FT_OK)
-						throw "FT4222_SPISlave_Read failed";
-					if (dataSz != sizeTransferred)
+					if (dataSz3 != sizeTransferred)
 						throw "Data Read Failed";
 					rxSize -= sizeTransferred;
-					uint8 addr = processSpiAddr(rxHeader[1]);
+					uint8_t addr = processSpiAddr(rxHeader[1]);
 					ASSERT_DBG(addr < SCREEN_DY);
 					processSpiMsg3(rxBuffer, addr);
 				}
+				else if ((4 == mode) && (rxSize >= dataSz4))
+				{
+					if (FT4222_SPISlave_Read(ftHandle, rxBuffer, dataSz4, &sizeTransferred) != FT_OK)
+						throw "FT4222_SPISlave_Read failed";
+					if (dataSz4 != sizeTransferred)
+						throw "Data Read Failed";
+					rxSize -= sizeTransferred;
+					uint8_t addr = processSpiAddr(rxHeader[1]);
+					ASSERT_DBG(addr < SCREEN_DY);
+					processSpiMsg4(rxBuffer, addr);
+				}
 			}
-			ASSERT_DBG(rxSize < headerSz + dataSz);
 			while (rxSize) // normally should be 0
 			{
-				uint16 sizeTransferred = 0;
-				FT4222_SPISlave_Read(ftHandle, rxBuffer, 1, &sizeTransferred);
+				uint16_t sizeTransferred = 0;
+				if (FT4222_SPISlave_Read(ftHandle, rxBuffer, 1, &sizeTransferred) != FT_OK)
+					throw "FT4222_SPISlave_Read failed";
 				rxSize -= sizeTransferred;
 			}
 		}
@@ -193,11 +227,4 @@ int listFtUsbDevices(_Out_ char* s)
 		}
 	}
 	return numOfDevices;
-}
-
-HANDLE revcFT4222()
-{
-	if (slaveDevIdx < 0)
-		return NULL;
-	return CreateThread(NULL, 0, ftRecv, 0, 0, NULL);
 }

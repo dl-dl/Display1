@@ -156,8 +156,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 	if (IDOK != DialogBox(appGlobals.hInst, MAKEINTRESOURCE(IDD_DIALOG1), appGlobals.mainWnd, DialogSpiStatus))
 		return 1;
+	if (slaveDevIdx < 0)
+		return 1;
 
-	HANDLE hComm = revcFT4222();
+	HANDLE hComm = CreateThread(NULL, 0, ftRecv, 0, 0, NULL);
 
 	MainLoop(&appGlobals);
 
@@ -237,7 +239,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 
-		case (WM_USER + WM_USER_MSG_POINT_DATA):
+		case (WM_USER + WM_USER_MSG_LINE_DATA):
 		{
 			PointDataMsg* p = reinterpret_cast<PointDataMsg*>(lParam);
 			appGlobals.screen.setData(p->addr, p->data);
