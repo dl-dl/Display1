@@ -135,7 +135,7 @@ DWORD WINAPI ftRecv(LPVOID)
 			if (FT4222_SPISlave_GetRxStatus(ftHandle, &rxSize) != FT_OK)
 				throw "FT4222_SPISlave_GetRxStatus failed";
 
-			while (rxSize >= headerSz + dataSz3)
+			while (rxSize >= headerSz + min(dataSz3, dataSz4))
 			{
 				int mode = 0;
 				uint16_t sizeTransferred = 0;
