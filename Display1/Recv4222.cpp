@@ -137,14 +137,15 @@ DWORD WINAPI ftRecv(LPVOID)
 
 			while (rxSize >= headerSz + min(dataSz3, dataSz4))
 			{
-				int mode = 0;
 				uint16_t sizeTransferred = 0;
 				if (FT4222_SPISlave_Read(ftHandle, rxHeader, headerSz, &sizeTransferred) != FT_OK)
 					throw "FT4222_SPISlave_Read failed";
 				if (headerSz != sizeTransferred)
 					throw "Header Read Failed";
 				rxSize -= sizeTransferred;
-				mode = processSpiHeader(rxHeader[0]);
+				int mode = processSpiHeader(rxHeader[0]);
+				uint8_t addr = processSpiAddr(rxHeader[1]);
+				ASSERT_DBG(addr < SCREEN_DY);
 
 				if ((3 == mode) && (rxSize >= dataSz3))
 				{
@@ -153,8 +154,6 @@ DWORD WINAPI ftRecv(LPVOID)
 					if (dataSz3 != sizeTransferred)
 						throw "Data Read Failed";
 					rxSize -= sizeTransferred;
-					uint8_t addr = processSpiAddr(rxHeader[1]);
-					ASSERT_DBG(addr < SCREEN_DY);
 					processSpiMsg3(rxBuffer, addr);
 				}
 				else if ((4 == mode) && (rxSize >= dataSz4))
@@ -164,8 +163,6 @@ DWORD WINAPI ftRecv(LPVOID)
 					if (dataSz4 != sizeTransferred)
 						throw "Data Read Failed";
 					rxSize -= sizeTransferred;
-					uint8_t addr = processSpiAddr(rxHeader[1]);
-					ASSERT_DBG(addr < SCREEN_DY);
 					processSpiMsg4(rxBuffer, addr);
 				}
 			}
@@ -178,6 +175,7 @@ DWORD WINAPI ftRecv(LPVOID)
 			}
 		}
 		FT_Close(ftHandle);
+		CloseHandle(hEvent);
 	}
 	catch (const char* err)
 	{
