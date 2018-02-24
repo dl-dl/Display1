@@ -25,43 +25,32 @@ static int processSpiHeader(uint8_t code)
 		return 4;
 	return 0;
 }
-/*
-static uint8 bitReverse(uint8_t b)
-{
-	b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-	b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-	b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-	return b;
-}
-*/
+
 static inline uint8_t processSpiAddr(uint8_t code)
 {
 	return code;
 }
 
-static void processSpiMsg3(_In_ const uint8_t* data, uint8_t addr)
+static void processSpiMsg3(_In_ const uint8_t* spiBits, uint8_t addr)
 {
 	PointDataMsg* p = new PointDataMsg;
 	p->addr = addr;
 	ASSERT_DBG(SCREEN_DX * 3 <= sizeof(p->data));
+	// Reads one byte after spiBits[SCREEN_DX*3/8]
 	for (size_t i = 0; i < SCREEN_DX; ++i)
 	{
 		size_t n = (i * 3) / 8;
 		size_t m = (i * 3) % 8;
-		uint8_t v = data[n];
-		v >>= m;
-		uint16_t vh = (i < SCREEN_DX - 1) ? data[n + 1] : 0;
-		vh <<= (8 - m);
-		v |= (uint8_t)vh;
-		p->data[i * 3] = ((v >> 2) & 1) * 255;
+		uint8_t v = (*(uint16_t*)(spiBits + n) >> m);
+		p->data[i * 3] = (v & 1) * 255;
 		p->data[i * 3 + 1] = ((v >> 1) & 1) * 255;
-		p->data[i * 3 + 2] = (v & 1) * 255;
+		p->data[i * 3 + 2] = ((v >> 2) & 1) * 255;
 	}
 
 	gPostMsg(WM_USER_MSG_LINE_DATA, 0, p);
 }
 
-static void processSpiMsg4(_In_ const uint8_t* data, uint8_t addr)
+static void processSpiMsg4(_In_ const uint8_t* spiBits, uint8_t addr)
 {
 	PointDataMsg* p = new PointDataMsg;
 	p->addr = addr;
@@ -70,10 +59,10 @@ static void processSpiMsg4(_In_ const uint8_t* data, uint8_t addr)
 	{
 		size_t n = (i * 4) / 8;
 		size_t m = (i * 4) % 8;
-		const uint8_t v = data[n] >> m;
-		p->data[i * 3] = ((v >> 2) & 1) * 255;
+		const uint8_t v = spiBits[n] >> m;
+		p->data[i * 3] = (v & 1) * 255;
 		p->data[i * 3 + 1] = ((v >> 1) & 1) * 255;
-		p->data[i * 3 + 2] = (v & 1) * 255;
+		p->data[i * 3 + 2] = ((v >> 2) & 1) * 255;
 	}
 
 	gPostMsg(WM_USER_MSG_LINE_DATA, 0, p);
