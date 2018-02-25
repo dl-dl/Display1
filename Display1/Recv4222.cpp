@@ -35,9 +35,9 @@ static void processSpiMsg3(_In_ const uint8_t* spiBits, uint8_t addr)
 {
 	PointDataMsg* p = new PointDataMsg;
 	p->addr = addr;
-	ASSERT_DBG(SCREEN_DX * 3 <= sizeof(p->data));
+	ASSERT_DBG(SCREEN_DY * 3 <= sizeof(p->data));
 	// Reads one byte after spiBits[SCREEN_DX*3/8]
-	for (size_t i = 0; i < SCREEN_DX; ++i)
+	for (size_t i = 0; i < SCREEN_DY; ++i)
 	{
 		size_t n = (i * 3) / 8;
 		size_t m = (i * 3) % 8;
@@ -54,8 +54,8 @@ static void processSpiMsg4(_In_ const uint8_t* spiBits, uint8_t addr)
 {
 	PointDataMsg* p = new PointDataMsg;
 	p->addr = addr;
-	ASSERT_DBG(SCREEN_DX * 3 <= sizeof(p->data));
-	for (size_t i = 0; i < SCREEN_DX; ++i)
+	ASSERT_DBG(SCREEN_DY * 3 <= sizeof(p->data));
+	for (size_t i = 0; i < SCREEN_DY; ++i)
 	{
 		size_t n = (i * 4) / 8;
 		size_t m = (i * 4) % 8;
@@ -111,8 +111,8 @@ DWORD WINAPI ftRecv(LPVOID)
 
 		const uint16_t headerSz = 2;
 		const uint16_t tailSz = 2;
-		const uint16_t dataSz3 = SCREEN_DX * 3 / 8 + tailSz;
-		const uint16_t dataSz4 = SCREEN_DX * 4 / 8 + tailSz;
+		const uint16_t dataSz3 = SCREEN_DY * 3 / 8 + tailSz;
+		const uint16_t dataSz4 = SCREEN_DY * 4 / 8 + tailSz;
 		ASSERT_DBG(0 == (SCREEN_DX * 3) % 8);
 		uint8_t rxHeader[headerSz];
 		uint8_t rxBuffer[1024];

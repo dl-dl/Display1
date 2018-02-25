@@ -54,7 +54,7 @@ struct ScreenData
 		ASSERT_DBG(line < SCREEN_DX);
 //		int res = SetDIBits(hdcMem, hbmp, SCREEN_DY - 1 - line, 1, pbits, &info, DIB_RGB_COLORS);
 		const BYTE* p = (BYTE*)pbits;
-		for (int y = 0; y < SCREEN_DX; ++y)
+		for (int y = 0; y < SCREEN_DY; ++y)
 			SetPixel(hdcMem, line, y, RGB(p[y * 3], p[y * 3 + 1], p[y * 3 + 2]));
 //		ASSERT_DBG(res);
 	}
