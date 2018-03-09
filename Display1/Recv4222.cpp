@@ -19,9 +19,7 @@ static void showMessage(_In_z_ const char* text)
 
 static int processSpiHeader(uint8_t code)
 {
-	if (0x80 == (code & 0xBB)) // 3-bit data update
-		return 3;
-	else if (0x90 == (code & 0xB3)) // 4-bit data update
+	if (0x90 == (code & 0xB3)) // 4-bit data update
 		return 4;
 	return 0;
 }
@@ -29,25 +27,6 @@ static int processSpiHeader(uint8_t code)
 static inline uint8_t processSpiAddr(uint8_t code)
 {
 	return code;
-}
-
-static void processSpiMsg3(_In_ const uint8_t* spiBits, uint8_t addr)
-{
-	PointDataMsg* p = new PointDataMsg;
-	p->addr = addr;
-	ASSERT_DBG(SCREEN_DY * 3 <= sizeof(p->data));
-	// Reads one byte after spiBits[SCREEN_DX*3/8]
-	for (size_t i = 0; i < SCREEN_DY; ++i)
-	{
-		size_t n = (i * 3) / 8;
-		size_t m = (i * 3) % 8;
-		uint8_t v = (*(uint16_t*)(spiBits + n) >> m);
-		p->data[i * 3] = (v & 1) * 255;
-		p->data[i * 3 + 1] = ((v >> 1) & 1) * 255;
-		p->data[i * 3 + 2] = ((v >> 2) & 1) * 255;
-	}
-
-	gPostMsg(WM_USER_MSG_LINE_DATA, 0, p);
 }
 
 static void processSpiMsg4(_In_ const uint8_t* spiBits, uint8_t addr)
@@ -58,11 +37,12 @@ static void processSpiMsg4(_In_ const uint8_t* spiBits, uint8_t addr)
 	for (size_t i = 0; i < SCREEN_DY; ++i)
 	{
 		size_t n = (i * 4) / 8;
-		size_t m = (i * 4) % 8;
-		const uint8_t v = spiBits[n] >> m;
-		p->data[i * 3] = (v & 1) * 255;
-		p->data[i * 3 + 1] = ((v >> 1) & 1) * 255;
-		p->data[i * 3 + 2] = ((v >> 2) & 1) * 255;
+		uint8_t v = spiBits[n];
+		if(0 == (i % 2))
+			v >>= 4;
+		p->data[i * 3] = ((v >> 3) & 1) * 255;
+		p->data[i * 3 + 1] = ((v >> 2) & 1) * 255;
+		p->data[i * 3 + 2] = ((v >> 1) & 1) * 255;
 	}
 
 	gPostMsg(WM_USER_MSG_LINE_DATA, 0, p);
@@ -111,9 +91,8 @@ DWORD WINAPI ftRecv(LPVOID)
 
 		const uint16_t headerSz = 2;
 		const uint16_t tailSz = 2;
-		const uint16_t dataSz3 = SCREEN_DY * 3 / 8 + tailSz;
 		const uint16_t dataSz4 = SCREEN_DY * 4 / 8 + tailSz;
-		ASSERT_DBG(0 == (SCREEN_DX * 3) % 8);
+		ASSERT_DBG(0 == (SCREEN_DX * 4) % 8);
 		uint8_t rxHeader[headerSz];
 		uint8_t rxBuffer[1024];
 		while (!terminateComm)
@@ -124,7 +103,7 @@ DWORD WINAPI ftRecv(LPVOID)
 			if (FT4222_SPISlave_GetRxStatus(ftHandle, &rxSize) != FT_OK)
 				throw "FT4222_SPISlave_GetRxStatus failed";
 
-			while (rxSize >= headerSz + min(dataSz3, dataSz4))
+			while (rxSize >= headerSz + dataSz4)
 			{
 				uint16_t sizeTransferred = 0;
 				if (FT4222_SPISlave_Read(ftHandle, rxHeader, headerSz, &sizeTransferred) != FT_OK)
@@ -136,16 +115,7 @@ DWORD WINAPI ftRecv(LPVOID)
 				uint8_t addr = processSpiAddr(rxHeader[1]);
 				ASSERT_DBG(addr < SCREEN_DY);
 
-				if ((3 == mode) && (rxSize >= dataSz3))
-				{
-					if (FT4222_SPISlave_Read(ftHandle, rxBuffer, dataSz3, &sizeTransferred) != FT_OK)
-						throw "FT4222_SPISlave_Read failed";
-					if (dataSz3 != sizeTransferred)
-						throw "Data Read Failed";
-					rxSize -= sizeTransferred;
-					processSpiMsg3(rxBuffer, addr);
-				}
-				else if ((4 == mode) && (rxSize >= dataSz4))
+				if ((4 == mode) && (rxSize >= dataSz4))
 				{
 					if (FT4222_SPISlave_Read(ftHandle, rxBuffer, dataSz4, &sizeTransferred) != FT_OK)
 						throw "FT4222_SPISlave_Read failed";
